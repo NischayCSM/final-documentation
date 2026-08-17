@@ -1,4 +1,4 @@
-# Paddy Disease Classification — Baseline Training & Quantization Benchmarking
+# Paddy Disease Classification by PyTorch — Baseline Training & Quantization Benchmarking
 
 ## Part A — Phase 1: Baseline CNN Training
 
