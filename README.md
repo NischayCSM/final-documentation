@@ -37,7 +37,9 @@ All six scripts follow the same process. The difference is in the model architec
 ├── quantization/
 │   ├── resnet.py            # Phase 2: quantization benchmark for ResNet18
 │   └── all_models.py        # Phase 2: quantization benchmark for all six architectures
-├── requirements.txt
+├── requirements-models.txt      # Phase 1 dependencies (install into venv-models)
+├── requirements-quantization.txt # Phase 2 dependencies (install into venv-quant)
+├── requirements.txt              # optional: combined list, both phases in one env
 └── README.md
 ```
 
@@ -51,20 +53,103 @@ Running each script creates the following files:
 
 ## 3. Dataset Setup
 
-We use the Kaggle **Paddy Doctor: Paddy Disease Classification** dataset for this project.
+We use the Kaggle **Paddy Doctor: Paddy Disease Classification** dataset for this project: https://www.kaggle.com/c/paddy-disease-classification/
 
-1. Get the dataset from Kaggle.
-2. Unzip the dataset. You need the `train_images/` folder and `train.csv`. The `train_images/` folder must have one subfolder for each class.
-3. Change the dataset paths in each script.
+### 3.1 Downloading the dataset
+
+You need a (free) Kaggle account, and you need to have accepted the competition rules on the competition page above before you can download the data — otherwise both options below will fail with a 403 error.
+
+**Option A — Kaggle CLI (recommended):**
+
+1. Install the CLI:
+   ```bash
+   pip install kaggle
+   ```
+2. Get an API token: go to your Kaggle account settings (https://www.kaggle.com/settings) → "API" → "Create New Token". This downloads a `kaggle.json` file containing your credentials.
+3. Place that file where the CLI expects it:
+   - Linux/Mac/WSL: `~/.kaggle/kaggle.json`
+   - Windows (native): `C:\Users\<you>\.kaggle\kaggle.json`
+
+   ```bash
+   mkdir -p ~/.kaggle
+   mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json
+   chmod 600 ~/.kaggle/kaggle.json   # Linux/Mac/WSL only — Kaggle refuses to run if this file is group/world-readable
+   ```
+4. Download and unzip:
+   ```bash
+   kaggle competitions download -c paddy-disease-classification
+   unzip paddy-disease-classification.zip -d paddy-disease-classification
+   ```
+
+**Option B — Manual download (no API token needed):**
+
+1. Go to the competition page: https://www.kaggle.com/c/paddy-disease-classification/
+2. Log in (or create a free account) and accept the competition rules if you haven't already — there's an "I Understand and Accept" prompt the first time.
+3. Click the **"Data"** tab on the competition page.
+4. Scroll down and click **"Download All"** (this downloads a single zip containing `train.csv`, `train_images/`, `test_images/`, and a sample submission file).
+5. Unzip it wherever you plan to store it (see Section 3.2 below) — on Windows, right-click the `.zip` → "Extract All"; on Linux/Mac, `unzip paddy-disease-classification.zip -d paddy-disease-classification`.
+
+You only strictly need `train_images/` and `train.csv` out of what's in the zip for Phase 1 and Phase 2 — `test_images/` and the sample submission aren't used by any script in this repo yet (see the Phase 3 roadmap in Section 8).
+
+### 3.2 Where to store it
+
+Either way, you end up with a folder containing (at minimum) `train_images/` and `train.csv`. Store this **outside the repository**, not inside it — the dataset is several GB, and committing it (even accidentally) will bloat the repo and likely exceed GitHub's file size limits. Make a sibling folder next to the repo — not inside it — and call it `dataset/`, e.g.:
+
+```
+~/projects/
+├── paddy-disease-classification/     ← this repo (models/, quantization/, README.md, ...)
+└── dataset/
+    └── paddy-disease-classification/
+        ├── train_images/
+        │   ├── bacterial_leaf_blight/
+        │   ├── bacterial_leaf_streak/
+        │   ├── ...
+        │   └── tungro/
+        └── train.csv
+```
+
+If you keep the dataset inside the repo folder anyway (e.g. for convenience on a personal machine), at least add it to `.gitignore` so it never gets committed:
+```
+train_images/
+train.csv
+*.zip
+```
+
+The `train_images/` folder must have one subfolder per class — this is how it ships from Kaggle already, so you shouldn't need to reorganize anything after unzipping.
+
+**Remember you're working across two systems, per Section 4** — Phase 1 (`models/`) on native Windows, Phase 2 (`quantization/`) on Linux/WSL2. That means you'll likely end up with **two separate copies of the dataset** (or one copy accessed via two different path styles), one per system:
+- **Windows, for Phase 1:** e.g. `C:\Users\you\projects\dataset\paddy-disease-classification\train_images`
+- **Linux/WSL2, for Phase 2:** e.g. `/home/you/projects/dataset/paddy-disease-classification/train_images` — if you're using WSL2, this can be the *same* physical files as your Windows copy via the `/mnt/c/...` path (see Section B.2), so you don't necessarily need to download it twice.
+
+### 3.3 Point the scripts at it
+
+Every script (`models/*.py` and `quantization/*.py`) hardcodes its own `data_dir` (and, in the Phase 1 scripts, `csv_path`) at the top of the file. There's no shared config — you need to update the path in **each script individually** to wherever you stored the dataset in Section 3.2 above, matching the path style for whichever system that script actually runs on:
+```python
+# models/*.py — running on native Windows
+data_dir = r"C:\Users\you\projects\dataset\paddy-disease-classification\train_images"
+
+# quantization/*.py — running on Linux/WSL2
+data_dir = "/home/you/projects/dataset/paddy-disease-classification/train_images"
+```
+See Section 6.2 and Section B.2 for the phase-specific notes on this.
 
 ## 4. Environment Setup
 
 We suggest using Python 3.10 or later.
 
+**Use two separate environments, on two different systems.** This repo is split so that Phase 1 (`models/`) and Phase 2 (`quantization/`) don't need to share a Python environment — or even a machine:
+
+- **Phase 1 (`models/`) → native Windows is fine.** None of the training scripts need `torch.compile` or a C/C++ compiler, so there's no reason to fight with WSL for this phase. Set up a dedicated venv for it, e.g. `venv-models`, right here on Windows and install `requirements-models.txt` into it.
+- **Phase 2 (`quantization/`) → use Linux (WSL2/Ubuntu).** `torch.compile` needs a C/C++ toolchain and, on WSL2, the NVIDIA library path fixes covered in Section B.4. Set up a **second, separate** venv for it, e.g. `venv-quant`, inside your Ubuntu/WSL2 environment, and install `requirements-quantization.txt` into that one instead.
+
+Keeping them apart means a Phase 2 `torchao`/CUDA-toolkit version bump can never break your Phase 1 training environment, and you're not stuck fighting compiler setup just to run the Phase 1 scripts. If you'd rather skip the split and use a single environment for everything (e.g. you're already set up on Linux/WSL2), `requirements.txt` in the repo root is the combined list — it's just the union of `requirements-models.txt` and `requirements-quantization.txt`, nothing extra.
+
+This section (4) covers the Phase 1 / Windows environment; jump to Section B.4 when you're ready to set up the Phase 2 / Linux environment.
+
 ```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python -m venv venv-models
+venv-models\Scripts\activate      # Windows PowerShell/cmd; on Linux/Mac: source venv-models/bin/activate
+pip install -r requirements-models.txt
 ```
 
 ### 4.1 Installing PyTorch
@@ -78,7 +163,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 Then install the rest:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-models.txt
 ```
 
 Check that your GPU is visible before training:
@@ -158,9 +243,58 @@ There are two scripts:
 - **`quantization/all_models.py`**. This script tests all six models from Phase 1.
 - **`quantization/resnet.py`**. This script tests the ResNet18 model in more detail.
 
-### B.1 Things You Need To Do Before Running The Scripts
+### B.1 Workflow: run Phase 1 first, then place the weights alongside Phase 2
 
-These scripts need the weights from Phase 1 to be in the working folder. The weights are in files like `resnet_paddy.pth`. If a weight file is missing, the script will use a default ImageNet weight instead. The accuracy with the default weight will not be as good as with the one you trained.
+Phase 2 doesn't train anything itself — it only evaluates weights that Phase 1 already produced. Follow this order:
+
+1. **Run the Phase 1 scripts first.** Each script in `models/` (see Section 5) saves a `.pth` weights file when it finishes, e.g. `models/resnet.py` produces `resnet_paddy.pth`. Do this for however many of the six architectures you want to benchmark in Phase 2 — you don't have to train all six if you only care about one.
+2. **Copy (or move) each `.pth` file into the `quantization/` folder**, i.e. the same folder as `quantization/resnet.py` and `quantization/all_models.py`. Both scripts look for the weights files (`resnet_paddy.pth`, `densenet_paddy.pth`, `efficientnet_paddy.pth`, `mobilenet_paddy.pth`, `googlenet_paddy.pth`, `vgg_paddy.pth`) in their own working directory — not in `models/` — so if you run `python quantization/resnet.py` from the repo root without moving the file, it won't find `resnet_paddy.pth` and will silently fall back to an un-fine-tuned ImageNet model (see the warning behavior described below).
+3. If a `.pth` file is missing from `quantization/`, the script will use a default ImageNet weight instead. The accuracy with the default weight will not be as good as with the one you trained — this isn't a crash, but you should check the console for the "falling back to default weights" warning before trusting the accuracy numbers.
+
+### B.1.1 Running just one model instead of all six
+
+`quantization/all_models.py` loops over all six architectures. If you only want to benchmark a single model, use `quantization/resnet.py` as your starting point instead — despite the name, you don't have to leave it as ResNet18. All you need to change are **two things**:
+
+1. **The weights path** — swap `weights_path = "resnet_paddy.pth"` for whichever `.pth` file you copied into `quantization/` in Section B.1 (e.g. `weights_path = "vgg_paddy.pth"`).
+2. **The model-building function** — swap the body of `get_resnet18()` for the matching architecture's construction code.
+
+The six model-construction snippets below are the exact ones `quantization/all_models.py` already uses internally, inside its `get_model_standard()` factory function — copy the branch for whichever architecture you want directly into `quantization/resnet.py`'s `get_resnet18()` (or rename the function to match, it doesn't have to stay called `get_resnet18`):
+
+```python
+# ResNet18  → weights_path = "resnet_paddy.pth"
+model = models.resnet18(weights="DEFAULT")
+model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+# DenseNet121  → weights_path = "densenet_paddy.pth"
+model = models.densenet121(weights="DEFAULT")
+model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+
+# EfficientNet-B0  → weights_path = "efficientnet_paddy.pth"
+model = models.efficientnet_b0(weights="DEFAULT")
+model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
+# MobileNetV2  → weights_path = "mobilenet_paddy.pth"
+model = models.mobilenet_v2(weights="DEFAULT")
+model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
+# VGG16  → weights_path = "vgg_paddy.pth"
+model = models.vgg16(weights="DEFAULT")
+model.classifier[6] = nn.Linear(model.classifier[6].in_features, num_classes)
+
+# GoogLeNet  → weights_path = "googlenet_paddy.pth"
+model = models.googlenet(weights="DEFAULT")
+model.aux_logits = False
+model.fc = nn.Linear(model.fc.in_features, num_classes)
+```
+
+After building `model` with whichever branch you picked, keep the loop that follows it in `get_model_standard()` in `quantization/all_models.py` — it disables `inplace` operations across the whole model, which the quantization/tracing steps later in the script depend on:
+```python
+for m in model.modules():
+    if hasattr(m, 'inplace'):
+        m.inplace = False
+```
+
+If you find yourself doing this often, it's simpler to just run `quantization/all_models.py` directly and read off the one row you care about from its per-model results tables (see Section B.5.1) — the swap above is mainly useful if you specifically want the extra BFloat16/FP16 stage that only `quantization/resnet.py` has (see the Phase 2 stage table above), applied to an architecture other than ResNet18.
 
 ### B.2 The Path To The Dataset
 
@@ -173,6 +307,70 @@ The script assumes that there are 10 classes in the dataset. If you have a diffe
 ### B.4 Things You Need To Install
 
 You need to install `torchao` to run these scripts. You also need to have a C++ compiler installed.
+
+**Use a Linux system for Phase 2 — and a second, separate environment from Phase 1.** As introduced in Section 4, this repo is meant to be run across two environments: Phase 1 (`models/`) on native Windows in its own `venv-models`, and Phase 2 (`quantization/`) on Linux in its own `venv-quant`. Given the C++ compiler requirement in Section B.6.1 and the GPU library path issue below, quantization benchmarking is much more reliable on Linux than on native Windows. If you're on Windows, install **Ubuntu for Windows (WSL2)** rather than fighting with the MSVC Build Tools path — either run `wsl --install` from an administrator PowerShell/Command Prompt, or install "Ubuntu" from the Microsoft Store, then set it up and run everything from inside that Ubuntu environment.
+
+**Create the Phase 2 virtual environment inside that Linux/WSL2 environment** — not the same `venv-models` you used for Phase 1. Phase 2 pulls in more (and more version-sensitive) packages — `torchao`, the CUDA toolkit's Python bindings, and `torch.compile`'s own build dependencies — on top of everything already in `requirements-quantization.txt`. Keeping the two venvs separate means a Phase 2 `torchao`/CUDA-toolkit version bump can never break your Phase 1 training environment (see Section B.6.8), and stops Phase 2 dependencies from colliding with any other PyTorch project on the same machine:
+```bash
+python3 -m venv venv-quant
+source venv-quant/bin/activate    # inside WSL/Ubuntu this is always the bash-style activation, even if you're used to Windows
+pip install -r requirements-quantization.txt
+```
+
+#### B.4.1 Install the Linux build and CUDA prerequisites first
+
+A fresh Ubuntu/WSL install has none of this by default, and `torch.compile` needs all three pieces before it can compile anything. Install these **before** touching the `export` commands in Section B.4.2 — otherwise the exports have nothing correctly set up to point at, and you'll just trade one error for another.
+
+1. **C++ compiler and linker (`g++`, `ld`)** — a fresh Ubuntu/WSL install doesn't include these out of the box:
+   ```bash
+   sudo apt update
+   sudo apt upgrade -y
+   sudo apt install build-essential
+   ```
+
+2. **Python development headers** — `torch.compile` builds a C++ extension that binds back into Python, which needs the Python C-API headers (`Python.h`). Install the `-dev` package matching your Python version (check with `python3 --version` first), e.g. for Python 3.12:
+   ```bash
+   sudo apt install python3.12-dev
+   ```
+   (swap `3.12` for whatever `python3 --version` actually reports on your system).
+
+3. **CUDA Toolkit (WSL-Ubuntu build)** — even though the actual NVIDIA driver lives on the Windows host and passes through automatically into `/usr/lib/wsl/lib`, the compiler still needs the CUDA header files (e.g. things under `-I/usr/local/cuda/include`) to compile CUDA-aware code at all. Install the official NVIDIA network repo build for WSL-Ubuntu:
+   ```bash
+   wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
+   sudo dpkg -i cuda-keyring_1.1-1_all.deb
+   sudo apt update
+   sudo apt install cuda-toolkit
+   ```
+   Don't install the regular (non-WSL) Linux CUDA driver package here — WSL2 already gets the driver from Windows; you only need the toolkit/headers.
+
+To summarize why all three matter together: `build-essential` gets you a compiler at all; the CUDA Toolkit gives that compiler the CUDA headers it needs to understand CUDA code; and (as covered next) the `export` lines are what finally let the compiler and the runtime linker actually *find* the real driver library (`libcuda.so`) that Windows exposes at `/usr/lib/wsl/lib`. Skipping any one of the three leaves you with a different failure at a different stage of the same `torch.compile` call.
+
+#### B.4.2 WSL2: fix the NVIDIA library path before running quantization
+
+If you're on WSL2 with an NVIDIA GPU, do this **before** running either quantization script, or `torch.compile` will fail to find the CUDA driver libraries during compilation.
+
+WSL2 automatically mounts the NVIDIA driver libraries from Windows into the Linux filesystem at `/usr/lib/wsl/lib`, so GPU passthrough works without you installing a separate Linux NVIDIA driver. The problem is that this path usually isn't in your C++ toolchain's default search locations, so when `torch.compile` (TorchInductor) compiles and links its generated C++/CUDA code, the compiler and linker can't find `libcuda.so` and similar files there — even though `torch.cuda.is_available()` reports `True` and ordinary (non-compiled) CUDA operations work fine.
+
+Run these before running your Python script:
+
+```bash
+export LIBRARY_PATH=/usr/lib/wsl/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+```
+
+Why both variables are needed:
+- **`LIBRARY_PATH`** is read by the compiler/linker (`gcc`/`g++`/`nvcc`) at **build time**, when it's deciding where to look for libraries to link against while compiling TorchInductor's generated code.
+- **`LD_LIBRARY_PATH`** is read by the dynamic linker (`ld.so`) at **run time**, when the already-compiled extension is loaded and needs to resolve those same shared libraries again to actually execute.
+
+You need the WSL path in both, because compiling and running are two separate steps that each do their own library lookup — fixing only one will get you past compilation and then fail at runtime, or vice versa.
+
+**Tip:** if this fixes the issue, add both `export` lines to the bottom of your `~/.bashrc` (or `~/.zshrc`) so they're set automatically in every new terminal session, instead of having to type them before every run:
+
+```bash
+echo 'export LIBRARY_PATH=/usr/lib/wsl/lib:$LIBRARY_PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
+```
 
 ### B.5 Running The Scripts
 
@@ -293,11 +491,11 @@ Both scripts hardcode 512 calibration samples for PTQ/QAT calibration. If your `
 
 #### B.6.9 The 16-bit stage in `quantization/resnet.py` is labeled incorrectly
 
-The code changes the model and inputs to `torch.bfloat16`. The results table it prints calls this row "16-Bit (BFloat16)" in the source. However, the actual reference run in §B.5.1 shows the printed label as `Half-Precision (FP16)`. BFloat16 and FP16 are not the same thing — they split the exponent and mantissa differently and have different numeric ranges and precision behavior. This is a mistake in the label, not a problem with the underlying math. It means you cannot trust the row label alone to know which 16-bit format was actually used. If it matters for your report, check the `.to(...)` call in the code directly, rather than trusting the printed table. Consider fixing the print string to match before you rely on it.
+The code changes the model and inputs to `torch.bfloat16`. The results table it prints calls this row "16-Bit (BFloat16)" in the source. However, the actual reference run in Section B.5.1 shows the printed label as `Half-Precision (FP16)`. BFloat16 and FP16 are not the same thing — they split the exponent and mantissa differently and have different numeric ranges and precision behavior. This is a mistake in the label, not a problem with the underlying math. It means you cannot trust the row label alone to know which 16-bit format was actually used. If it matters for your report, check the `.to(...)` call in the code directly, rather than trusting the printed table. Consider fixing the print string to match before you rely on it.
 
 ## 7. Disclosure of AI Tool Usage
 
-We disclose the use of AI tools as required by the assignment. **Claude (Anthropic) and Gemini (Google) were used as coding assistants** in Phase 1 and Phase 2. We used them to draft and adapt the training loop boilerplate for the six architectures. We also used them to draft and debug the quantization benchmarking scripts and to debug the issues listed in §6 and §B.6. Additionally, we used them to write this README. All dataset handling, model choices, hyperparameters, and final code were reviewed and run by the author. The AI tools were only used as a coding aid, not as an autonomous agent.
+We disclose the use of AI tools as required by the assignment. **Claude (Anthropic) and Gemini (Google) were used as coding assistants** in Phase 1 and Phase 2. We used them to draft and adapt the training loop boilerplate for the six architectures. We also used them to draft and debug the quantization benchmarking scripts and to debug the issues listed in Section 6 and Section B.6. Additionally, we used them to write this README. All dataset handling, model choices, hyperparameters, and final code were reviewed and run by the author. The AI tools were only used as a coding aid, not as an autonomous agent.
 
 ## 8. Roadmap for Phase 3 and beyond
 

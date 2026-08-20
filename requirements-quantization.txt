@@ -1,0 +1,25 @@
+# Phase 2: quantization benchmarking (quantization/resnet.py, all_models.py)
+#
+# Install torch and torchvision separately FIRST — see README.md section 4.1
+# for the correct command for your hardware (GPU/CUDA version vs CPU-only).
+# Example (CUDA 12.1):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Example (CPU only):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# This phase additionally requires:
+#   - torchao (listed below) — keep its version reasonably close to your torch
+#     release, see README.md section B.6.8
+#   - A working C/C++ compiler on your PATH for torch.compile to work at all
+#     (build-essential on Linux/WSL, MSVC Build Tools on native Windows,
+#     Xcode Command Line Tools on macOS) — see README.md section B.6.1
+#   - Recommended: run this phase on Linux or WSL2/Ubuntu, not native Windows
+#     — see README.md section B.4 for the full setup (build-essential,
+#     python3-dev, CUDA Toolkit, and the WSL library-path exports)
+#
+# Also install everything in requirements-models.txt — Phase 2 loads and
+# evaluates the models trained in Phase 1, so it needs the same base stack
+# (scikit-learn, numpy, pandas) plus the packages below.
+-r requirements-models.txt
+
+torchao>=0.5

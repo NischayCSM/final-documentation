@@ -1,0 +1,19 @@
+# Phase 1: baseline training (models/resnet.py, vgg.py, densenet.py,
+# googlenet.py, mobilenet.py, efficientnet.py)
+#
+# Install torch and torchvision separately FIRST — see README.md section 4.1
+# for the correct command for your hardware (GPU/CUDA version vs CPU-only).
+# Example (CUDA 12.1):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Example (CPU only):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# Phase 1 runs fine on native Windows or Linux — no C/C++ compiler needed
+# (see README.md section 4, Operating system note).
+
+scikit-learn>=1.3
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+seaborn>=0.12
+tqdm>=4.65
