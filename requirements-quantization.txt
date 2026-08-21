@@ -22,4 +22,4 @@
 # (scikit-learn, numpy, pandas) plus the packages below.
 -r requirements-models.txt
 
-torchao>=0.5
+torchao==0.5
