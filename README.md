@@ -522,12 +522,3 @@ The code changes the model and inputs to `torch.bfloat16`. The results table it 
 ## 7. Disclosure of AI Tool Usage
 
 We disclose the use of AI tools as required by the assignment. **Claude (Anthropic) and Gemini (Google) were used as coding assistants** in Phase 1 and Phase 2. We used them to draft and adapt the training loop boilerplate for the six architectures. We also used them to draft and debug the quantization benchmarking scripts and to debug the issues listed in Section 6 and Section B.6. Additionally, we used them to write this README. All dataset handling, model choices, hyperparameters, and final code were reviewed and run by the author. The AI tools were only used as a coding aid, not as an autonomous agent.
-
-## 8. Roadmap for Phase 3 and beyond
-
-In Phase 1 we established baseline accuracy for the six architectures, without hyperparameter search, a test-set inference/submission pipeline, or ensembling. In Phase 2 we added benchmarking for inference efficiency — size, latency, and accuracy trade-offs for the trained models under FP32, BF16, INT8 PTQ, and INT8 QAT. We have not picked a deployment target yet. For later phases we plan to:
-
-- Choose a model and precision combination based on the Phase 2 accuracy, latency, and size trade-off table.
-- Tune hyperparameters for the selected model, including learning rate, batch size, and augmentation strength.
-- Build an inference pipeline for the test set using the `test_images/` folder from the Kaggle competition, and create a submission file by running it through the chosen quantized model.
-- Possibly ensemble the top-performing models, and/or convert the selected quantized model into a deployment format such as ONNX, TorchScript, or a mobile runtime, if on-device inference is a goal.
