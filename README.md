@@ -25,7 +25,7 @@ All six scripts follow the same process. The difference is in the model architec
 
 ## 2. Repository Structure
 
-.
+```
 ├── models/
 │   ├── resnet.py          # Phase 1: trains ResNet18
 │   ├── vgg.py               # Phase 1: trains VGG16
@@ -40,7 +40,7 @@ All six scripts follow the same process. The difference is in the model architec
 ├── requirements-quantization.txt # Phase 2 dependencies (install into venv-quant)
 ├── requirements.txt              # optional: combined list, both phases in one env
 └── README.md
-
+```
 
 Note that there are two different `resnet.py` files in this repository. One is for training. The other is for quantization benchmarking.
 
@@ -61,8 +61,9 @@ You need a (free) Kaggle account, and you need to have accepted the competition 
 **Option A — Kaggle CLI (recommended):**
 
 1. Install the CLI:
+   ```
    pip install kaggle
-   
+   ```
 2. Get an API token: go to your Kaggle account settings (https://www.kaggle.com/settings) → "API" → "Create New Token". This downloads a `kaggle.json` file containing your credentials.
 3. Place that file where the CLI expects it:
    - Linux/Mac/WSL: `~/.kaggle/kaggle.json`
@@ -91,6 +92,7 @@ You only strictly need `train_images/` and `train.csv` out of what's in the zip 
 
 Either way, you end up with a folder containing (at minimum) `train_images/` and `train.csv`. Store this **outside the repository**, not inside it — the dataset is several GB, and committing it (even accidentally) will bloat the repo and likely exceed GitHub's file size limits. Make a sibling folder next to the repo — not inside it — and call it `dataset/`, e.g.:
 
+```
 ~/projects/
 ├── paddy-disease-classification/     ← this repo (models/, quantization/, README.md, ...)
 └── dataset/
@@ -101,14 +103,15 @@ Either way, you end up with a folder containing (at minimum) `train_images/` and
         │   ├── ...
         │   └── tungro/
         └── train.csv
-
+```
 
 If you keep the dataset inside the repo folder anyway (e.g. for convenience on a personal machine), at least add it to `.gitignore` so it never gets committed:
 
+```
 train_images/
 train.csv
 *.zip
-
+```
 
 The `train_images/` folder must have one subfolder per class — this is how it ships from Kaggle already, so you shouldn't need to reorganize anything after unzipping.
 
@@ -121,10 +124,12 @@ The `train_images/` folder must have one subfolder per class — this is how it 
 Every script (`models/*.py` and `quantization/*.py`) hardcodes its own `data_dir` (and, in the Phase 1 scripts, `csv_path`) at the top of the file. There's no shared config — you need to update the path in **each script individually** to wherever you stored the dataset in Section 3.2 above, matching the path style for whichever system that script actually runs on:
 
 # models/*.py — running on native Windows
+```
 data_dir = r"C:\Users\you\projects\dataset\paddy-disease-classification\train_images"
 
 # quantization/*.py — running on Linux/WSL2
 data_dir = "/home/you/projects/dataset/paddy-disease-classification/train_images"
+```
 
 See Section 6.2 and Section B.2 for the phase-specific notes on this.
 
@@ -141,27 +146,31 @@ Keeping them apart means a Phase 2 `torchao`/CUDA-toolkit version bump can never
 
 This section (4) covers the Phase 1 / Windows environment; jump to Section B.4 when you're ready to set up the Phase 2 / Linux environment.
 
+```
 python -m venv venv-models
 venv-models\Scripts\activate      # Windows PowerShell/cmd; on Linux/Mac: source venv-models/bin/activate
 pip install -r requirements-models.txt
-
+```
 
 ### 4.1 Installing PyTorch
 
 Install PyTorch before installing the rest of the requirements.
 
+```
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-
+```
 
 Then install the rest:
 
+```
 pip install -r requirements-models.txt
-
+```
 
 Check that your GPU is visible before training:
 
+```
 python -c "import torch; print(torch.cuda.is_available())"
-
+```
 
 ### 4.2 First-run internet access
 
@@ -171,13 +180,14 @@ The first time each script runs it will download the pre-trained ImageNet weight
 
 Each script is standalone and self-contained:
 
+```
 python models/resnet.py
 python models/vgg.py
 python models/densenet.py
 python models/googlenet.py
 python models/mobilenet.py
 python models/efficientnet.py
-
+```
 
 Run them one at a time.
 
@@ -187,8 +197,9 @@ Run them one at a time.
 
 Fix the CUDA check in `densenet.py`:
 
+```
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+```
 
 ### 6.2 Hardcoded Windows paths
 
@@ -249,38 +260,51 @@ Phase 2 doesn't train anything itself — it only evaluates weights that Phase 1
 
 The six model-construction snippets below are the exact ones `quantization/all_models.py` already uses internally, inside its `get_model_standard()` factory function — copy the branch for whichever architecture you want directly into `quantization/resnet.py`'s `get_resnet18()` (or rename the function to match, it doesn't have to stay called `get_resnet18`):
 
-# ResNet18  → weights_path = "resnet_paddy.pth"
+### ResNet18  → weights_path = "resnet_paddy.pth"
+```
 model = models.resnet18(weights="DEFAULT")
 model.fc = nn.Linear(model.fc.in_features, num_classes)
+```
 
-# DenseNet121  → weights_path = "densenet_paddy.pth"
+### DenseNet121  → weights_path = "densenet_paddy.pth"
+```
 model = models.densenet121(weights="DEFAULT")
 model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+```
 
-# EfficientNet-B0  → weights_path = "efficientnet_paddy.pth"
+### EfficientNet-B0  → weights_path = "efficientnet_paddy.pth"
+```
 model = models.efficientnet_b0(weights="DEFAULT")
 model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+```
 
-# MobileNetV2  → weights_path = "mobilenet_paddy.pth"
+### MobileNetV2  → weights_path = "mobilenet_paddy.pth"
+```
 model = models.mobilenet_v2(weights="DEFAULT")
 model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+```
 
-# VGG16  → weights_path = "vgg_paddy.pth"
+### VGG16  → weights_path = "vgg_paddy.pth"
+```
 model = models.vgg16(weights="DEFAULT")
 model.classifier[6] = nn.Linear(model.classifier[6].in_features, num_classes)
+```
 
-# GoogLeNet  → weights_path = "googlenet_paddy.pth"
+### GoogLeNet  → weights_path = "googlenet_paddy.pth"
+```
 model = models.googlenet(weights="DEFAULT")
 model.aux_logits = False
 model.fc = nn.Linear(model.fc.in_features, num_classes)
+```
 
 
 After building `model` with whichever branch you picked, keep the loop that follows it in `get_model_standard()` in `quantization/all_models.py` — it disables `inplace` operations across the whole model, which the quantization/tracing steps later in the script depend on:
 
+```
 for m in model.modules():
     if hasattr(m, 'inplace'):
         m.inplace = False
-
+```
 
 If you find yourself doing this often, it's simpler to just run `quantization/all_models.py` directly and read off the one row you care about from its per-model results tables (see Section B.5.1) — the swap above is mainly useful if you specifically want the extra BFloat16/FP16 stage that only `quantization/resnet.py` has (see the Phase 2 stage table above), applied to an architecture other than ResNet18.
 
@@ -304,17 +328,25 @@ Keeping the two venvs separate means a Phase 2 `torchao`/CUDA-toolkit version bu
 Run the following commands in this exact order:
 
 # Force Python 3.12 for compatibility
+```
 python3.12 -m venv venv-quant
 source venv-quant/bin/activate    
+```
 
 # 1. Upgrade pip first
+```
 pip install --upgrade pip
+```
 
 # 2. Install PyTorch 2.5.1 (Explicitly appending +cu121 to avoid indexing errors)
+```
 pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+```
 
 # Install the libraries from the .txt file
+```
 pip install -r requirements-quantization.txt
+```
 
 
 ### B.4.1 Install the Linux build and CUDA prerequisites first
@@ -322,22 +354,27 @@ A fresh Ubuntu/WSL install has none of this by default, and `torch.compile` need
 
 **C++ compiler and linker (g++, ld)** — a fresh Ubuntu/WSL install doesn't include these out of the box:
 
+```
 sudo apt update
 sudo apt upgrade -y
 sudo apt install build-essential
+```
 
 
 **Python development headers** — `torch.compile` builds a C++ extension that binds back into Python, which needs the Python C-API headers (`Python.h`). Install the `-dev` package matching your Python version:
 
+```
 sudo apt install python3.12-dev
-
+```
 
 **CUDA Toolkit (WSL-Ubuntu build)** — even though the actual NVIDIA driver lives on the Windows host and passes through automatically into `/usr/lib/wsl/lib`, the compiler still needs the CUDA header files (e.g., things under `-I/usr/local/cuda/include`) to compile CUDA-aware code at all. Install the official NVIDIA network repo build for WSL-Ubuntu:
 
+```
 wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt update
 sudo apt install cuda-toolkit
+```
 
 *Note: Don't install the regular (non-WSL) Linux CUDA driver package here — WSL2 already gets the driver from Windows; you only need the toolkit/headers.*
 
@@ -348,8 +385,10 @@ WSL2 automatically mounts the NVIDIA driver libraries from Windows into the Linu
 
 Run these before running your Python script:
 
+```
 export LIBRARY_PATH=/usr/lib/wsl/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+```
 
 *Tip: If this fixes the issue, add both export lines to the bottom of your `~/.bashrc` (or `~/.zshrc`) so they're set automatically in every new terminal session.*
 
@@ -363,9 +402,11 @@ To fix this, you must dynamically toggle the wrapper in your scripts:
 ### B.5 Running The Scripts
 Once your environment is properly configured, navigate into the `quantization` directory and run the scripts using `python3`:
 
+```
 cd quantization
 python3 all_models.py
 python3 resnet.py
+```
 
 These scripts will print the benchmarking results directly to the console. If you want to save the results, you can redirect the output to a text file (e.g., `python3 resnet.py > results.txt`).
 
