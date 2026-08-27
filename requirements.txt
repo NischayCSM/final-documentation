@@ -1,0 +1,46 @@
+# Paddy Disease Classification — dependencies for train.py and quantize.py,
+# both run in the SAME Linux/WSL2 environment. See README.md section 4 for
+# the full setup (getting onto Linux, build/CUDA prerequisites, and the
+# exact order to install everything in).
+#
+# ---------------------------------------------------------------------------
+# STEP 1: Install PyTorch and torchvision FIRST, before this file.
+# ---------------------------------------------------------------------------
+# Pinned version used and tested for this project (GPU / CUDA 12.1):
+#   pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+#
+# CPU-only fallback, if you don't have an NVIDIA GPU or the CUDA install
+# fails (see README.md section 7.10 for common causes):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# Requires Python 3.10, 3.11, or 3.12 — a too-new Python version will make
+# the pinned torch install above fail with a misleading "no matching
+# distribution found" error. See README.md section 4.3.
+#
+# ---------------------------------------------------------------------------
+# STEP 2: Then install everything below.
+# ---------------------------------------------------------------------------
+
+# --- Used by both train.py and quantize.py ---
+pandas>=2.0
+matplotlib>=3.7
+seaborn>=0.12
+tqdm>=4.65
+
+# --- Pinned for quantize.py / torchao compatibility (see README.md section
+#     7.8) — train.py works fine with these exact versions too, it just
+#     doesn't strictly require them ---
+numpy==2.5.2
+scikit-learn==1.9.0
+
+# --- quantize.py only ---
+# Do not use torchao>=0.6.0 with torch==2.5.1 — newer torchao releases look
+# for sub-byte datatypes (e.g. torch.int1) that this torch version doesn't
+# have, and it will crash at runtime. See README.md section 7.8.
+torchao==0.5.0
+
+# ---------------------------------------------------------------------------
+# quantize.py also needs a working C/C++ compiler on your PATH for
+# torch.compile (build-essential + python3-dev on Linux/WSL) — this can't
+# be installed via pip. See README.md section 4.2.
+# ---------------------------------------------------------------------------
