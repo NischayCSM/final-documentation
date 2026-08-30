@@ -7,7 +7,7 @@
 # STEP 1: Install PyTorch and torchvision FIRST, before this file.
 # ---------------------------------------------------------------------------
 # Pinned version used and tested for this project (GPU / CUDA 12.1):
-#   pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+# pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 #
 # CPU-only fallback, if you don't have an NVIDIA GPU or the CUDA install
 # fails (see README.md section 7.10 for common causes):

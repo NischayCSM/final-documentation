@@ -1,4 +1,39 @@
-# Paddy Disease Classification Using PyTorch: Baseline Training and Quantization Benchmarking
+# Efficient and Lightweight Computer Vision Models for Paddy Disease Detection
+
+## Project Workflow
+
+This is the end-to-end path from a fresh clone to a finished set of quantization results. Every step links to the section with the full detail — this is just the map.
+
+```
+ [1] Set up Linux/WSL2 + venv  (Section 4)
+        │
+        ▼
+ [2] Download the Paddy Doctor dataset  (Section 3)
+        │
+        ▼
+ [3] Train a model:  python train.py --model <name> --data_dir <path>  (Section 5)
+        │
+        ▼
+     <model>_paddy.pth  +  confusion_matrix_<model>.png  +  console classification report
+        │
+        ▼
+ [4] Benchmark it:  python quantize.py --model <name|all> --data_dir <path> --weights_dir <path>  (Section 6)
+        │
+        ▼
+ [5] Compare FP32 / FP16 / PTQ / QAT results  (Section 6.3)
+        │
+        ▼
+ [6] Read results against the known caveats before trusting any number  (Section 7)
+```
+
+1. **Set up the environment (Section 4).** Get onto Linux/WSL2 if you're on Windows, install the C/C++ build tools and CUDA Toolkit, create the venv, and install the pinned PyTorch build plus `requirements.txt`. Do this once, before anything else.
+2. **Get the dataset (Section 3).** Download the Paddy Doctor dataset from Kaggle (CLI or manual), store it outside the repo, and note the path to `train_images/`.
+3. **Train one or more architectures (Section 5).** Run `train.py --model <name> --data_dir <path>` once per architecture you care about. Each run writes `<model>_paddy.pth`, a confusion-matrix image, and a classification report to whatever directory you ran it from.
+4. **Benchmark quantization (Section 6).** Run `quantize.py --model <name-or-all> --data_dir <path> --weights_dir <path-to-.pth-files>`. This loads the weights from step 3 and is where FP32/FP16/PTQ/QAT benchmarking happens — it does not train anything itself.
+5. **Compare the four precision stages (Section 6.3).** Read the per-model results tables (size, accuracy, GPU/CPU latency) that print to the console, or redirect them to a file.
+6. **Read the results with the known caveats in mind (Section 7).** In particular, don't take EfficientNet-B0's quantized weights at face value (Section 7's discussion, and the flagged result in Section 6.3) — check the known-issues list before drawing conclusions from any anomalous number.
+
+Steps 1 and 2 are one-time setup; steps 3–6 repeat for every architecture you want to train and benchmark.
 
 ## 1. Overview
 
@@ -50,6 +85,74 @@ Running `train.py` for a given `--model` creates, in the **current working direc
 4. **Splits 80/20 with `sklearn.model_selection.train_test_split`**, stratified by class and with a fixed `random_state=42` — so the same physical images end up in train vs. val on every run, for both `train.py` and `quantize.py`, as long as the underlying `data_dir` contents don't change.
 5. **Picks `num_workers` automatically based on OS** — `0` on native Windows (`os.name == 'nt'`), `4` everywhere else. Since this project runs entirely inside Linux/WSL2 (Section 4), you'll always get `num_workers=4` in practice; the Windows branch only matters if you ever run these scripts outside the setup this README describes.
 6. **Returns `(train_loader, val_loader, class_names)`** — a `DataLoader` pair plus the list of class name strings, which is what both `train.py` and `quantize.py` build their models and reports around.
+
+### 2.2 Code Architecture / Data Flow
+
+This is how the three files actually connect at runtime — distinct from the Project Workflow diagram above, which is about the *commands you run*; this one is about what the *code itself* does when you run them.
+
+```
+                              dataset.py
+                        get_dataloaders(data_dir, batch_size)
+                     (ImageFolder + augmentation + 80/20 split)
+                                    │
+                     ┌──────────────┴──────────────┐
+                     │                              │
+                     ▼                              ▼
+                train.py                      quantize.py
+        --model <name> --data_dir      --model <name>|all --data_dir
+                     │                    --weights_dir <path>
+                     │                              │
+          builds backbone + new                loads <model>_paddy.pth
+          classifier head, trains              from --weights_dir for
+          for --epochs, evaluates               each requested model
+                     │                              │
+                     ▼                              ▼
+        <model>_paddy.pth                 runs FP32 baseline, then
+        confusion_matrix_<model>.png      FP16 (single-model pass only),
+        console classification report     INT8 PTQ, INT8 QAT
+                     │                              │
+                     └──────────────┬───────────────┘
+                                    ▼
+                    <model>_paddy.pth is the ONLY link
+                    between the two scripts — quantize.py
+                    reads it via --weights_dir and will
+                    raise FileNotFoundError if it's missing
+                                    │
+                                    ▼
+                    quantize.py console output:
+                    one Markdown results table per model
+                    (size, accuracy, GPU/CPU latency per stage)
+```
+
+The two scripts never call each other and never share process memory — the trained weights file is the entire interface between Phase 1 and Phase 2. This is also why `--weights_dir` in Section 6 has to point at wherever `train.py` actually wrote its output (Section 5): there's no other channel connecting them.
+
+### 2.3 Estimated Runtime & Hardware
+
+There's no fixed benchmark for total training/quantization wall-clock time in this repo — it depends entirely on your GPU, CPU, and how many of the six architectures you run. What *is* fixed is each architecture's relative compute cost, since that follows directly from parameter count and FLOPs, which don't change with hardware:
+
+| Model | Parameters (approx.) | Relative training cost per epoch | Relative quantization/benchmarking cost |
+|---|---|---|---|
+| MobileNetV2 | ~3.5M | Lowest | Lowest |
+| GoogLeNet | ~6.6M | Low | Low |
+| ResNet18 | ~11.7M | Low–Medium | Low–Medium |
+| EfficientNet-B0 | ~5.3M | Medium (fewer params, but its depthwise/SE ops are less GPU-parallel-friendly than plain convolutions) | Medium |
+| DenseNet121 | ~8.0M | Medium–High (dense feature concatenation is memory-bandwidth-heavy despite the modest parameter count) | Medium–High |
+| VGG16 | ~138M | Highest by a wide margin | Highest by a wide margin (see Section 7.9 — its quantized `torch.compile` step is skipped specifically because of this) |
+
+This ordering is consistent with the CPU latency figures already measured and reported in Section 6.3 (e.g. VGG16's ~1.6s baseline CPU inference vs. ResNet18's ~250ms for a single batch) — training and quantization time per epoch scale with the same underlying compute cost.
+
+For absolute numbers on your own hardware, fill in the table below after your first run of each script (`time python train.py --model <name> --data_dir <path>` on Linux gives you real wall-clock time directly):
+
+| Model | Training time (`train.py`, 10 epochs) | Quantization benchmarking time (`quantize.py`, all 4 stages) | GPU used |
+|---|---|---|---|
+| ResNet18 | | | |
+| DenseNet121 | | | |
+| EfficientNet-B0 | | | |
+| MobileNetV2 | | | |
+| GoogLeNet | | | |
+| VGG16 | | | |
+
+If you're deciding whether to run all six architectures or just one: MobileNetV2, GoogLeNet, and ResNet18 are the cheapest three to iterate on, so they're a reasonable place to start if you're constrained on time or GPU access, with VGG16 left until last given how much longer it takes per the table above.
 
 ## 3. Dataset Setup
 

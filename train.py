@@ -12,12 +12,14 @@ from sklearn.metrics import classification_report, confusion_matrix
 # Import our new dataset module
 from dataset import get_dataloaders
 
+ALL_MODELS = ["resnet18", "densenet121", "efficientnet_b0", "mobilenet_v2", "vgg16", "googlenet"]
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Universal Paddy Disease Training Script")
     parser.add_argument("--data_dir", type=str, required=True, help="Path to training images")
-    parser.add_argument("--model", type=str, required=True, 
-                        choices=["resnet18", "densenet121", "efficientnet_b0", "mobilenet_v2", "vgg16", "googlenet"],
-                        help="Select the model architecture to train")
+    parser.add_argument("--model", type=str, required=True,
+                        choices=ALL_MODELS + ["all"],
+                        help="Select the model architecture to train, or 'all' to train every architecture")
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
@@ -45,38 +47,33 @@ def build_model(model_name, num_classes):
         model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model
 
-def main():
-    args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device} | Training Model: {args.model}")
-
-    # 1. Load Data (from our modularized dataset.py)
-    train_loader, val_loader, class_names = get_dataloaders(args.data_dir, args.batch_size)
+def train_one_model(model_name, args, train_loader, val_loader, class_names, device):
+    """Runs the full train/validate/save/report cycle for a single architecture."""
+    print(f"\n{'#'*60}\nSTARTING RUN: {model_name.upper()}\n{'#'*60}")
     num_classes = len(class_names)
-    print(f"Found {num_classes} classes.")
 
-    # 2. Build Model
-    model = build_model(args.model, num_classes).to(device)
+    # Build Model
+    model = build_model(model_name, num_classes).to(device)
 
-    # 3. Optimizer & Loss
+    # Optimizer & Loss
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    # 4. Training Loop
+    # Training Loop
     start_time = time.time()
     for epoch in range(args.epochs):
         model.train()
         running_loss, correct_train, total_train = 0.0, 0, 0
 
-        for images, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Train]"):
+        for images, labels in tqdm(train_loader, desc=f"[{model_name}] Epoch {epoch+1}/{args.epochs} [Train]"):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            
+
             outputs = model(images)
-            
+
             # Handle GoogLeNet auxiliary outputs during training
-            if args.model == "googlenet" and isinstance(outputs, models.GoogLeNetOutputs):
+            if model_name == "googlenet" and isinstance(outputs, models.GoogLeNetOutputs):
                 loss = criterion(outputs.logits, labels) + 0.3 * criterion(outputs.aux_logits2, labels) + 0.3 * criterion(outputs.aux_logits1, labels)
                 preds = torch.argmax(outputs.logits, dim=1)
             else:
@@ -91,31 +88,32 @@ def main():
             total_train += labels.size(0)
 
         scheduler.step()
-        
+
         # Validation
         model.eval()
         val_loss, correct_val, total_val = 0.0, 0, 0
         with torch.no_grad():
-            for images, labels in tqdm(val_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Val]"):
+            for images, labels in tqdm(val_loader, desc=f"[{model_name}] Epoch {epoch+1}/{args.epochs} [Val]"):
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
                 loss = criterion(outputs, labels)
-                
+
                 val_loss += loss.item() * images.size(0)
                 preds = torch.argmax(outputs, dim=1)
                 correct_val += (preds == labels).sum().item()
                 total_val += labels.size(0)
 
-        print(f"Train Loss: {running_loss/total_train:.4f} | Train Acc: {correct_train/total_train:.4f} | "
+        print(f"[{model_name}] Train Loss: {running_loss/total_train:.4f} | Train Acc: {correct_train/total_train:.4f} | "
               f"Val Loss: {val_loss/total_val:.4f} | Val Acc: {correct_val/total_val:.4f}")
 
-    print(f"\nTraining completed in: {int(time.time() - start_time) // 60}m {int(time.time() - start_time) % 60}s")
+    elapsed = time.time() - start_time
+    print(f"\n[{model_name}] Training completed in: {int(elapsed) // 60}m {int(elapsed) % 60}s")
 
-    # 5. Save Artifacts
-    weights_filename = f"{args.model}_paddy.pth"
+    # Save Artifacts
+    weights_filename = f"{model_name}_paddy.pth"
     torch.save(model.state_dict(), weights_filename)
-    print(f"Model saved to '{weights_filename}'")
-    generate_report(model, val_loader, class_names, device, args.model)
+    print(f"[{model_name}] Model saved to '{weights_filename}'")
+    generate_report(model, val_loader, class_names, device, model_name)
 
 def generate_report(model, val_loader, class_names, device, model_name):
     model.eval()
@@ -139,6 +137,28 @@ def generate_report(model, val_loader, class_names, device, model_name):
     plt.tight_layout()
     plt.savefig(f"confusion_matrix_{model_name}.png", dpi=300)
     plt.close()
+
+def main():
+    args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Load data once and reuse across every model when --model all is passed,
+    # instead of re-reading the dataset from disk for each architecture.
+    train_loader, val_loader, class_names = get_dataloaders(args.data_dir, args.batch_size)
+    print(f"Found {len(class_names)} classes.")
+
+    models_to_run = ALL_MODELS if args.model == "all" else [args.model]
+    print(f"Models queued: {', '.join(models_to_run)}")
+
+    overall_start = time.time()
+    for model_name in models_to_run:
+        train_one_model(model_name, args, train_loader, val_loader, class_names, device)
+
+    if len(models_to_run) > 1:
+        elapsed = time.time() - overall_start
+        print(f"\n{'#'*60}\nALL RUNS COMPLETE ({len(models_to_run)} models) in "
+              f"{int(elapsed) // 60}m {int(elapsed) % 60}s\n{'#'*60}")
 
 if __name__ == "__main__":
     main()
